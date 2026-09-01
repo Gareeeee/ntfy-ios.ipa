@@ -1,0 +1,67 @@
+name: Build ntfy v1.4.1 unsigned IPA for iOS 14
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out ntfy iOS v1.4.1
+        uses: actions/checkout@v4
+        with:
+          repository: binwiederhier/ntfy-ios
+          ref: v1.4.1
+          fetch-depth: 1
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -project ntfy.xcodeproj \
+            -scheme ntfy \
+            -resolvePackageDependencies
+
+      - name: Build for an iOS device without code signing
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ntfy.xcodeproj \
+            -scheme ntfy \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0 \
+            build
+
+      - name: Package the app as an IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/ntfy.app"
+          test -d "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/package/Payload"
+          ditto "$APP_PATH" "$RUNNER_TEMP/package/Payload/ntfy.app"
+          cd "$RUNNER_TEMP/package"
+          ditto -c -k --sequesterRsrc --keepParent Payload \
+            "$GITHUB_WORKSPACE/ntfy-v1.4.1-ios14-unsigned.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ntfy-v1.4.1-ios14-unsigned
+          path: ntfy-v1.4.1-ios14-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
